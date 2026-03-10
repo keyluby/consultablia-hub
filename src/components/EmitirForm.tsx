@@ -65,7 +65,15 @@ export default function EmitirForm() {
     setError('');
 
     try {
+      console.log('Iniciando emisión de e-CF...', { tipoEcf, rncComprador, itemsCount: items.length });
+
+      // Verificación de configuración
+      if (supabase.supabaseUrl.includes('placeholder')) {
+        throw new Error('CONFIGURACIÓN FALTANTE: No se han detectado las claves de Supabase. Por favor, añádelas en la configuración de Lovable (VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY).');
+      }
+
       // 1. Insertar Factura
+      console.log('1. Insertando factura en tabla "invoices"...');
       const { data: invoiceData, error: invoiceError } = await supabase
         .from('invoices')
         .insert({
@@ -79,9 +87,14 @@ export default function EmitirForm() {
         .select()
         .single();
 
-      if (invoiceError) throw invoiceError;
+      if (invoiceError) {
+        console.error('Error insertando factura:', invoiceError);
+        throw invoiceError;
+      }
+      console.log('Factura insertada:', invoiceData);
 
       // 2. Insertar Ítems
+      console.log('2. Insertando ítems...');
       const itemsToInsert = items.map(item => ({
         invoice_id: invoiceData.id,
         descripcion: item.descripcion,
@@ -95,16 +108,26 @@ export default function EmitirForm() {
         .from('invoice_items')
         .insert(itemsToInsert);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('Error insertando ítems:', itemsError);
+        throw itemsError;
+      }
+      console.log('Ítems insertados con éxito.');
 
-      // 3. (Opcional) Llamar a la Edge Function para procesar el e-CF inmediatamente
-      // Aunque se puede usar un Webhook en Supabase, esto permite feedback rápido.
+      // 3. (Opcional) Llamar a la Edge Function
+      console.log('3. Invocando Edge Function "process-ecf"...');
       try {
-        await supabase.functions.invoke('process-ecf', {
+        const { error: funcInvokeError } = await supabase.functions.invoke('process-ecf', {
           body: { invoiceId: invoiceData.id }
         });
-      } catch (funcErr) {
-        console.warn('La firma automática falló, se procesará en segundo plano:', funcErr);
+        if (funcInvokeError) {
+          console.warn('La firma falló (pero la factura se guardó):', funcInvokeError);
+        } else {
+          console.log('Edge Function ejecutada correctamente.');
+        }
+      } catch (funcErr: any) {
+        console.warn('Excepción al llamar a la Edge Function:', funcErr);
+        // No lanzamos este error para no bloquear el éxito de la DB
       }
 
       setSuccess(true);
@@ -113,8 +136,15 @@ export default function EmitirForm() {
       }, 2000);
 
     } catch (err: any) {
-      console.error('Error al emitir e-CF:', err);
-      setError(err.message || 'Error inesperado al conectar con Supabase.');
+      console.error('Error crítico al emitir e-CF:', err);
+
+      let friendlyMessage = err.message || 'Error inesperado al conectar con Supabase.';
+
+      if (friendlyMessage.includes('Failed to fetch')) {
+        friendlyMessage = 'ERROR DE CONEXIÓN: No se pudo conectar con Supabase. Verifica tu conexión a internet o que la URL de Supabase sea correcta.';
+      }
+
+      setError(friendlyMessage);
     } finally {
       setLoading(false);
     }
