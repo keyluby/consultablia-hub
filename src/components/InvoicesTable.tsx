@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
 
 interface ECF {
   id: string;
-  eNcf: string;
-  tipoEcf: number;
-  fechaEmision: string;
-  totalFacturado: number;
-  estadoDgii: string;
+  e_ncf: string;
+  tipo_ecf: number;
+  fecha_emision: string;
+  total_facturado: number;
+  estado_dgii: string;
 }
 
 const ECF_TYPE_LABELS: Record<number, string> = {
@@ -17,23 +18,15 @@ const ECF_TYPE_LABELS: Record<number, string> = {
   34: 'Nota de Crédito',
 };
 
-const MOCK_INVOICES: ECF[] = [
-  { id: '1', eNcf: 'E31000000001', tipoEcf: 31, fechaEmision: new Date().toISOString(), totalFacturado: 15400.50, estadoDgii: 'APROBADO' },
-  { id: '2', eNcf: 'E32000000002', tipoEcf: 32, fechaEmision: new Date(Date.now() - 86400000).toISOString(), totalFacturado: 2350.00, estadoDgii: 'APROBADO' },
-  { id: '3', eNcf: 'E31000000003', tipoEcf: 31, fechaEmision: new Date(Date.now() - 172800000).toISOString(), totalFacturado: 8900.25, estadoDgii: 'PENDIENTE' },
-  { id: '4', eNcf: 'E34000000001', tipoEcf: 34, fechaEmision: new Date(Date.now() - 259200000).toISOString(), totalFacturado: 500.00, estadoDgii: 'RECHAZADO' },
-  { id: '5', eNcf: 'E31000000004', tipoEcf: 31, fechaEmision: new Date(Date.now() - 345600000).toISOString(), totalFacturado: 45000.00, estadoDgii: 'PROCESANDO' },
-];
-
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
-    PENDIENTE: { label: 'En Cola', className: 'badge badge-pending' },
-    PROCESANDO: { label: 'Procesando', className: 'badge badge-warning' },
-    APROBADO: { label: 'Aprobado', className: 'badge badge-success' },
-    RECHAZADO: { label: 'Rechazado', className: 'badge badge-danger' },
+    PENDIENTE: { label: 'En Cola', className: 'badge bg-slate-100 text-slate-600' },
+    PROCESANDO: { label: 'Procesando', className: 'badge bg-amber-50 text-amber-600 border-amber-100' },
+    APROBADO: { label: 'Aprobado', className: 'badge bg-emerald-50 text-emerald-600 border-emerald-100' },
+    RECHAZADO: { label: 'Rechazado', className: 'badge bg-rose-50 text-rose-600 border-rose-100' },
   };
-  const entry = map[status] ?? { label: status, className: 'badge' };
-  return <span className={entry.className}>{entry.label}</span>;
+  const entry = map[status] ?? { label: status, className: 'badge font-medium' };
+  return <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${entry.className}`}>{entry.label}</span>;
 }
 
 function SkeletonRow() {
@@ -41,7 +34,7 @@ function SkeletonRow() {
     <tr>
       {[1, 2, 3, 4, 5].map(i => (
         <td key={i} style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ height: '14px', width: i === 1 ? '100px' : i === 5 ? '70px' : '80px', background: '#E2E8F0', borderRadius: '4px' }} />
+          <div className="animate-pulse" style={{ height: '14px', width: i === 1 ? '100px' : i === 5 ? '70px' : '80px', background: '#E2E8F0', borderRadius: '4px' }} />
         </td>
       ))}
     </tr>
@@ -52,46 +45,74 @@ export default function InvoicesTable() {
   const [invoices, setInvoices] = useState<ECF[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadMockData = () => {
+  const loadRealData = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setInvoices(MOCK_INVOICES);
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setInvoices(data || []);
+    } catch (err) {
+      console.error('Error cargando facturas:', err);
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   useEffect(() => {
-    loadMockData();
+    loadRealData();
+
+    // Suscripción Real-time
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'invoices',
+        },
+        () => {
+          loadRealData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (
-    <div className="card fade-in" style={{ overflow: 'hidden' }}>
+    <div className="card fade-in border border-slate-200 shadow-sm" style={{ overflow: 'hidden', marginTop: '1.5rem' }}>
       {/* Header */}
       <div style={{
         padding: '1.25rem 1.5rem',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: '1px solid var(--color-border)',
+        borderBottom: '1px solid #F1F5F9',
       }}>
         <div>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>
             Comprobantes Emitidos
           </h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-            {loading ? '—' : `${invoices.length} comprobante${invoices.length !== 1 ? 's' : ''} registrado${invoices.length !== 1 ? 's' : ''}`}
+          <p style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '2px' }}>
+            {loading ? 'Sincronizando...' : `${invoices.length} comprobante${invoices.length !== 1 ? 's' : ''} registrado${invoices.length !== 1 ? 's' : ''}`}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Link to="/emitir" className="btn-primary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <Link to="/emitir" className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.375rem' }}>
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Nuevo e-CF
           </Link>
-          <button className="btn-secondary" onClick={loadMockData} title="Actualizar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button className="btn-secondary" onClick={loadRealData} title="Cargar de nuevo" style={{ padding: '0.5rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
               <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
-            Actualizar
           </button>
         </div>
       </div>
@@ -100,13 +121,13 @@ export default function InvoicesTable() {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#F9FAFB' }}>
+            <tr style={{ background: '#F8FAFC' }}>
               {['No. Comprobante', 'Tipo', 'Monto (DOP)', 'Estado', 'Fecha Emisión'].map(h => (
                 <th key={h} style={{
                   padding: '0.75rem 1.25rem', textAlign: 'left',
-                  fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.04em',
-                  borderBottom: '1px solid var(--color-border)',
+                  fontSize: '0.7rem', fontWeight: 700, color: '#64748B',
+                  textTransform: 'uppercase', letterSpacing: '0.05em',
+                  borderBottom: '1px solid #F1F5F9',
                 }}>
                   {h}
                 </th>
@@ -114,55 +135,51 @@ export default function InvoicesTable() {
             </tr>
           </thead>
           <tbody>
-            {loading && [1, 2, 3, 4, 5].map(i => <SkeletonRow key={i} />)}
+            {loading && invoices.length === 0 && [1, 2, 3].map(i => <SkeletonRow key={i} />)}
 
             {!loading && invoices.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: '4rem', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                <td colSpan={5} style={{ padding: '5rem', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', opacity: 0.6 }}>
                     <div style={{
-                      width: '48px', height: '48px', borderRadius: '12px', background: 'var(--color-accent-soft)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-accent)',
+                      width: '48px', height: '48px', borderRadius: '12px', background: '#F1F5F9',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8',
                     }}>
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14 2 14 8 20 8" />
                       </svg>
                     </div>
-                    <p style={{ fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Sin comprobantes</p>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', margin: 0 }}>Emite tu primer e-CF para verlo aquí.</p>
-                    <Link to="/emitir" className="btn-primary" style={{ marginTop: '0.25rem' }}>
-                      + Emitir e-CF
-                    </Link>
+                    <p style={{ fontWeight: 600, color: '#1E293B', margin: 0 }}>Sin facturas reales</p>
+                    <p style={{ fontSize: '0.8rem', color: '#64748B', margin: 0 }}>Los comprobantes emitidos desde Supabase aparecerán aquí.</p>
                   </div>
                 </td>
               </tr>
             )}
 
-            {!loading && invoices.map((invoice, i) => (
+            {invoices.map((invoice, i) => (
               <tr key={invoice.id} style={{
-                borderBottom: i < invoices.length - 1 ? '1px solid var(--color-border)' : 'none',
+                borderBottom: i < invoices.length - 1 ? '1px solid #F1F5F9' : 'none',
                 transition: 'background 0.15s',
               }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                className="hover:bg-slate-50"
               >
                 <td style={{ padding: '1rem 1.25rem' }}>
-                  <span style={{ fontFamily: 'monospace', fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-accent)' }}>
-                    {invoice.eNcf}
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem', fontWeight: 700, color: '#3A57E8' }}>
+                    {invoice.e_ncf}
                   </span>
                 </td>
-                <td style={{ padding: '1rem 1.25rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                  {ECF_TYPE_LABELS[invoice.tipoEcf] ?? `Tipo ${invoice.tipoEcf}`}
+                <td style={{ padding: '1rem 1.25rem', fontSize: '0.85rem', color: '#64748B' }}>
+                  {ECF_TYPE_LABELS[invoice.tipo_ecf] ?? `Tipo ${invoice.tipo_ecf}`}
                 </td>
-                <td style={{ padding: '1rem 1.25rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                  RD$ {invoice.totalFacturado?.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                <td style={{ padding: '1rem 1.25rem', fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
+                  RD$ {invoice.total_facturado?.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                 </td>
                 <td style={{ padding: '1rem 1.25rem' }}>
-                  <StatusBadge status={invoice.estadoDgii} />
+                  <StatusBadge status={invoice.estado_dgii} />
                 </td>
-                <td style={{ padding: '1rem 1.25rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                  {new Date(invoice.fechaEmision).toLocaleDateString('es-DO', {
+                <td style={{ padding: '1rem 1.25rem', fontSize: '0.8rem', color: '#64748B' }}>
+                  {new Date(invoice.fecha_emision).toLocaleDateString('es-DO', {
                     day: '2-digit', month: 'short', year: 'numeric',
                   })}
                 </td>

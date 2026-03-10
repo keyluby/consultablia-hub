@@ -1,5 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
+
+// Helper to generate a dummy e-NCF for the demo
+const generateNCF = (tipo: number) => {
+  const random = Math.floor(Math.random() * 90000000) + 10000000;
+  return `E${tipo}${random}`;
+};
 
 interface Item {
   descripcion: string;
@@ -52,18 +59,55 @@ export default function EmitirForm() {
     return acc + (item.tipoItbis === 1 ? base * 0.18 : item.tipoItbis === 2 ? base * 0.16 : 0);
   }, 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // 1. Insertar Factura
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert({
+          e_ncf: generateNCF(tipoEcf),
+          tipo_ecf: tipoEcf,
+          total_facturado: totalFacturado,
+          rnc_comprador: rncComprador,
+          razon_social_comprador: razonSocialComprador,
+          estado_dgii: 'PENDIENTE'
+        })
+        .select()
+        .single();
+
+      if (invoiceError) throw invoiceError;
+
+      // 2. Insertar Ítems
+      const itemsToInsert = items.map(item => ({
+        invoice_id: invoiceData.id,
+        descripcion: item.descripcion,
+        cantidad: item.cantidad,
+        precio_unitario: item.precioUnitario,
+        descuento: item.descuento,
+        tipo_itbis: item.tipoItbis
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('invoice_items')
+        .insert(itemsToInsert);
+
+      if (itemsError) throw itemsError;
+
       setSuccess(true);
       setTimeout(() => {
         navigate('/');
-      }, 1500);
-    }, 1500);
+      }, 2000);
+
+    } catch (err: any) {
+      console.error('Error al emitir e-CF:', err);
+      setError(err.message || 'Error inesperado al conectar con Supabase.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const labelStyle: React.CSSProperties = {
