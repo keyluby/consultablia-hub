@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 
 // Helper to generate a dummy e-NCF for the demo
@@ -24,6 +24,7 @@ const ECF_TYPES = [
 
 export default function EmitirForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +47,26 @@ export default function EmitirForm() {
     newItems[index] = { ...newItems[index], [field]: value };
     setItems(newItems);
   };
+
+  // Cargar datos pre-rellenados si vienen de un escaneo OCR
+  useEffect(() => {
+    const prefilledData = location.state?.prefilledData;
+    if (prefilledData) {
+      console.log('Cargando datos pre-llenados desde OCR:', prefilledData);
+      if (prefilledData.rncComprador) setRncComprador(prefilledData.rncComprador);
+      if (prefilledData.razonSocialComprador) setRazonSocialComprador(prefilledData.razonSocialComprador);
+
+      if (prefilledData.total > 0) {
+        setItems([{
+          descripcion: 'Consumo General (Extraído de OCR)',
+          cantidad: 1,
+          precioUnitario: prefilledData.total - (prefilledData.itbis || 0),
+          descuento: 0,
+          tipoItbis: prefilledData.itbis > 0 ? 1 : 3 // 18% o Exento
+        }]);
+      }
+    }
+  }, [location.state]);
 
   const getItemSubtotal = (item: Item) => {
     const base = (item.cantidad * item.precioUnitario) - item.descuento;

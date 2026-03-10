@@ -61,20 +61,20 @@ export default function EscanearPage() {
       // Nota: Aquí invocaríamos la función 'ocr-processor'
       // const { data, error: functionError } = await supabase.functions.invoke('ocr-processor', { body: { path: filePath } });
 
-      // Simulación de respuesta EXITOSA después de la subida real
-      await new Promise(r => setTimeout(r, 2000));
-
-      setExtracted({
-        rnc_comprador: "131652399",
-        ncf: "B0100000001",
-        total_facturado: 2018.52,
-        itbis: 307.91,
-        raw_text: "Texto extraído exitosamente del archivo subido a Supabase Storage."
+      console.log('Invocando OCR Processor para:', uploadData.path);
+      const { data: ocrData, error: ocrError } = await supabase.functions.invoke('ocr-processor', {
+        body: { storagePath: uploadData.path }
       });
 
+      if (ocrError) throw ocrError;
+
+      console.log('Datos extraídos por IA:', ocrData);
+      setExtracted(ocrData);
+      // setStep(3); // No 'step' state in original code
+
     } catch (err: any) {
-      console.error('OCR Error:', err);
-      setError(err.message || 'Error al procesar la imagen.');
+      console.error('Error procesando imagen:', err);
+      setError(err.message || 'Error al procesar la imagen con OCR.');
     } finally {
       setLoading(false);
     }
