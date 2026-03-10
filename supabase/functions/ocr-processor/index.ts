@@ -34,9 +34,15 @@ serve(async (req) => {
 
         if (downloadError) throw downloadError;
 
-        // Convertir a Base64 para enviarlo a OpenAI
+        // Convertir a Base64 para enviarlo a OpenAI (chunked to avoid stack overflow)
         const arrayBuffer = await fileData.arrayBuffer();
-        const base64Image = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        const base64Image = btoa(binary);
 
         // 2. Llamar a OpenAI Vision
         const openaiKey = Deno.env.get("OPENAI_API_KEY");
