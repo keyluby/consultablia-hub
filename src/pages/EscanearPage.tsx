@@ -191,7 +191,7 @@ export default function EscanearPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 1.5rem' }}>
-              Datos Extraídos (Open Source OCR)
+              Datos Extraídos (IA Vision)
             </h3>
 
             {loading ? (
@@ -201,7 +201,7 @@ export default function EscanearPage() {
                 </svg>
                 <div style={{ textAlign: 'center' }}>
                   <p style={{ margin: 0, fontWeight: 500, color: 'var(--color-text-primary)' }}>Analizando factura...</p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>MOCK: Simulando API Tesseract...</p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Procesando con GPT-4o Vision API...</p>
                 </div>
               </div>
             ) : extracted ? (
@@ -266,7 +266,18 @@ export default function EscanearPage() {
                   <button className="btn-secondary" style={{ flex: 1 }} onClick={() => { setFile(null); setPreview(''); setExtracted(null); }}>
                     Reintentar
                   </button>
-                  <button className="btn-primary" style={{ flex: 2 }} onClick={() => navigate('/emitir')}>
+                  <button className="btn-primary" style={{ flex: 2 }} onClick={() => {
+                    navigate('/emitir', {
+                      state: {
+                        prefilledData: {
+                          rncComprador: extracted.rnc_comprador || '',
+                          razonSocialComprador: extracted.raw_text?.substring(0, 50) || '', // Usar parte del texto extraído como nombre si no hay razón social
+                          total: extracted.total_facturado || 0,
+                          itbis: extracted.itbis || 0
+                        }
+                      }
+                    });
+                  }}>
                     Generar e-CF con estos datos
                   </button>
                 </div>
@@ -274,7 +285,7 @@ export default function EscanearPage() {
               </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                Sube la imagen para extraer los datos de RNC, totales e ITBIS usando Tesseract OCR.
+                Sube la imagen para extraer los datos de RNC, totales e ITBIS usando Inteligencia Artificial.
               </div>
             )}
           </div>
