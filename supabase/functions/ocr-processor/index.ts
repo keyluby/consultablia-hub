@@ -19,13 +19,20 @@ serve(async (req) => {
         }
 
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const authHeader = req.headers.get('Authorization');
 
-        if (!supabaseUrl || !supabaseKey) {
-            throw new Error("Missing Supabase environment variables (URL or Service Role Key)");
+        if (!supabaseUrl) {
+            throw new Error("Missing SUPABASE_URL");
+        }
+        if (!authHeader) {
+            throw new Error("Missing Authorization header from frontend");
         }
 
-        const supabase = createClient(supabaseUrl, supabaseKey);
+        // Use the frontend's auth token to bypass any corrupted secrets in Edge Function env variables
+        const token = authHeader.replace('Bearer ', '');
+        const supabase = createClient(supabaseUrl, token, {
+            global: { headers: { Authorization: authHeader } }
+        });
 
         // 1. Obtener la URL pública o descargar la imagen
         const { data: fileData, error: downloadError } = await supabase.storage
