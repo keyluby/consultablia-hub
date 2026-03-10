@@ -97,6 +97,16 @@ export default function EmitirForm() {
 
       if (itemsError) throw itemsError;
 
+      // 3. (Opcional) Llamar a la Edge Function para procesar el e-CF inmediatamente
+      // Aunque se puede usar un Webhook en Supabase, esto permite feedback rápido.
+      try {
+        await supabase.functions.invoke('process-ecf', {
+          body: { invoiceId: invoiceData.id }
+        });
+      } catch (funcErr) {
+        console.warn('La firma automática falló, se procesará en segundo plano:', funcErr);
+      }
+
       setSuccess(true);
       setTimeout(() => {
         navigate('/');
