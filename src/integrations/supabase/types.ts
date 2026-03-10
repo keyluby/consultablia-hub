@@ -287,6 +287,86 @@ export type Database = {
           },
         ]
       }
+      invoice_items: {
+        Row: {
+          cantidad: number
+          created_at: string | null
+          descripcion: string
+          descuento: number
+          id: string
+          invoice_id: string | null
+          precio_unitario: number
+          tipo_itbis: number
+        }
+        Insert: {
+          cantidad?: number
+          created_at?: string | null
+          descripcion: string
+          descuento?: number
+          id?: string
+          invoice_id?: string | null
+          precio_unitario?: number
+          tipo_itbis?: number
+        }
+        Update: {
+          cantidad?: number
+          created_at?: string | null
+          descripcion?: string
+          descuento?: number
+          id?: string
+          invoice_id?: string | null
+          precio_unitario?: number
+          tipo_itbis?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          created_at: string | null
+          e_ncf: string
+          estado_dgii: string
+          fecha_emision: string
+          id: string
+          razon_social_comprador: string | null
+          rnc_comprador: string | null
+          tipo_ecf: number
+          total_facturado: number
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          e_ncf: string
+          estado_dgii?: string
+          fecha_emision?: string
+          id?: string
+          razon_social_comprador?: string | null
+          rnc_comprador?: string | null
+          tipo_ecf: number
+          total_facturado?: number
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          e_ncf?: string
+          estado_dgii?: string
+          fecha_emision?: string
+          id?: string
+          razon_social_comprador?: string | null
+          rnc_comprador?: string | null
+          tipo_ecf?: number
+          total_facturado?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       items_ecf: {
         Row: {
           cantidad: number
@@ -673,7 +753,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_next_encf: { Args: { tipo_p: number }; Returns: string }
     }
     Enums: {
       EstadoEcfDgii:

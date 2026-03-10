@@ -67,11 +67,6 @@ export default function EmitirForm() {
     try {
       console.log('Iniciando emisión de e-CF...', { tipoEcf, rncComprador, itemsCount: items.length });
 
-      // Verificación de configuración
-      if (supabase.supabaseUrl.includes('placeholder')) {
-        throw new Error('CONFIGURACIÓN FALTANTE: No se han detectado las claves de Supabase. Por favor, añádelas en la configuración de Lovable (VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY).');
-      }
-
       // 1. Insertar Factura
       console.log('1. Insertando factura en tabla "invoices"...');
       const { data: invoiceData, error: invoiceError } = await supabase
