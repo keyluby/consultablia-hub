@@ -1,0 +1,378 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANTS (Empresas / Contribuyentes) ──────────────────────────────────
+
+model Tenant {
+  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rnc                     String            @unique @db.Char(11)
+  razonSocial             String            @db.VarChar(255)
+  nombreComercial         String?           @db.VarChar(255)
+  tipoContribuyente       TipoContribuyente
+  actividadEconomica      String?           @db.VarChar(10)  // Código CIIU
+  direccion               String?           @db.Text
+  emailFiscal             String            @db.VarChar(255)
+  telefono                String?           @db.VarChar(20)
+  estadoRnc               EstadoRnc         @default(ACTIVO)
+  esEmisorElectronico     Boolean           @default(false)
+  fechaCertificacionEcf   DateTime?         @db.Date
+  planSuscripcion         PlanSuscripcion   @default(STARTER)
+  planVenceEn             DateTime?         @db.Timestamptz
+  configuracion           Json              @default("{}")  // JSON flexible para settings del tenant
+  creadoEn                DateTime          @default(now()) @db.Timestamptz
+  actualizadoEn           DateTime          @updatedAt @db.Timestamptz
+  deletedAt               DateTime?         @db.Timestamptz
+
+  // Relaciones
+  usuarios                UsuarioTenant[]
+  certificados            CertificadoDigital[]
+  comprobantes            ComprobanteFiscalElectronico[]
+  registros606            Registro606[]
+  secuenciasNcf           SecuenciaNcf[]
+  documentosProcesando    DocumentoProcessing[]
+
+  @@index([rnc])
+  @@index([estadoRnc])
+  @@map("tenants")
+}
+
+enum TipoContribuyente {
+  GRANDE_NACIONAL
+  GRANDE_LOCAL
+  MEDIANO
+  PEQUENO
+  MICRO
+  NO_CLASIFICADO
+}
+
+enum EstadoRnc {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+  FALLECIDO  // Para personas físicas fallecidas
+}
+
+enum PlanSuscripcion {
+  STARTER
+  PROFESIONAL
+  CONTADOR
+  ENTERPRISE
+}
+
+// ─── USUARIOS ──────────────────────────────────────────────────────────────
+
+model Usuario {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String          @unique @db.VarChar(255)
+  passwordHash  String          @db.VarChar(255)
+  nombre        String          @db.VarChar(255)
+  apellido      String          @db.VarChar(255)
+  telefono      String?         @db.VarChar(20)
+  avatarUrl     String?         @db.Text
+  mfaEnabled    Boolean         @default(false)
+  mfaSecret     String?         @db.VarChar(255)  // Cifrado en capa de aplicación
+  ultimoLogin   DateTime?       @db.Timestamptz
+  creadoEn      DateTime        @default(now()) @db.Timestamptz
+  actualizadoEn DateTime        @updatedAt @db.Timestamptz
+  deletedAt     DateTime?       @db.Timestamptz
+
+  tenants       UsuarioTenant[]
+
+  @@map("usuarios")
+}
+
+model UsuarioTenant {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId   String    @db.Uuid
+  tenantId    String    @db.Uuid
+  rol         RolUsuario
+  activo      Boolean   @default(true)
+  creadoEn    DateTime  @default(now()) @db.Timestamptz
+
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([usuarioId, tenantId])
+  @@index([tenantId])
+  @@map("usuarios_tenants")
+}
+
+enum RolUsuario {
+  ADMIN        // Dueño / acceso total
+  CONTADOR     // Acceso operativo completo
+  ASISTENTE    // Solo carga de documentos
+  READONLY     // Solo lectura (cliente que supervisa)
+}
+
+// ─── CERTIFICADOS DIGITALES ────────────────────────────────────────────────
+
+model CertificadoDigital {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @db.Uuid
+  nombreAlias        String    @db.VarChar(100)
+  vaultSecretPath    String    @db.Text          // Ruta en Vault — NUNCA el cert aquí
+  entidadEmisora     String    @db.VarChar(255)  // ej: "DigiFirma RD"
+  numeroSerie        String    @unique @db.VarChar(100)
+  fechaEmision       DateTime  @db.Date
+  fechaVencimiento   DateTime  @db.Date
+  activo             Boolean   @default(true)
+  sha256Fingerprint  String    @db.Char(64)
+  creadoEn           DateTime  @default(now()) @db.Timestamptz
+
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([fechaVencimiento])  // Para alertas de vencimiento
+  @@map("certificados_digitales")
+}
+
+// ─── SECUENCIAS NCF ────────────────────────────────────────────────────────
+
+model SecuenciaNcf {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @db.Uuid
+  tipoEcf         Int       @db.SmallInt  // 31, 32, 33, 34, 41, 43, 44, 45, 46, 47
+  prefijo         String    @db.VarChar(3)  // ej: "E31"
+  secuenciaActual Int       @default(1)
+  secuenciaMax    Int
+  autorizadaEn    DateTime  @db.Date
+  venceEn         DateTime  @db.Date
+  activa          Boolean   @default(true)
+  creadoEn        DateTime  @default(now()) @db.Timestamptz
+  actualizadoEn   DateTime  @updatedAt @db.Timestamptz
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, tipoEcf, prefijo])
+  @@index([tenantId])
+  @@map("secuencias_ncf")
+}
+
+// ─── COMPROBANTES FISCALES ELECTRÓNICOS (e-CF emitidos) ───────────────────
+
+model ComprobanteFiscalElectronico {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String        @db.Uuid
+  tipoEcf               Int           @db.SmallInt  // 31=Créd.Fiscal, 32=Consumo, etc.
+  eNcf                  String        @unique @db.VarChar(19)  // ej: E310000000001
+  rncComprador          String?       @db.Char(11)
+  razonSocialComprador  String?       @db.VarChar(255)
+  fechaEmision          DateTime      @db.Date
+  fechaVencimientoPago  DateTime?     @db.Date
+
+  // Montos (DECIMAL obligatorio para valores fiscales)
+  montoGravadoI1        Decimal       @default(0) @db.Decimal(15, 2)  // Gravado 18%
+  montoGravadoI2        Decimal       @default(0) @db.Decimal(15, 2)  // Gravado 16%
+  montoExento           Decimal       @default(0) @db.Decimal(15, 2)
+  montoItbis1           Decimal       @default(0) @db.Decimal(15, 2)
+  montoItbis2           Decimal       @default(0) @db.Decimal(15, 2)
+  itbisTotal            Decimal       @default(0) @db.Decimal(15, 2)
+  propina               Decimal       @default(0) @db.Decimal(15, 2)
+  totalFacturado        Decimal       @db.Decimal(15, 2)
+
+  // Estado DGII
+  estadoDgii            EstadoEcfDgii @default(PENDIENTE)
+  codigoErrorDgii       String?       @db.VarChar(20)
+  mensajeErrorDgii      String?       @db.Text
+  intentosEnvio         Int           @default(0)
+  ultimoIntento         DateTime?     @db.Timestamptz
+
+  // Almacenamiento
+  xmlFirmadoS3Key       String?       @db.Text  // Retención legal: 10 años
+  riPdfS3Key            String?       @db.Text  // Representación Impresa
+  xmlHash               String?       @db.VarChar(64)  // SHA-256 del XML para integridad
+
+  // Notas de crédito/débito
+  ncfModificado         String?       @db.VarChar(19)
+
+  creadoEn              DateTime      @default(now()) @db.Timestamptz
+  actualizadoEn         DateTime      @updatedAt @db.Timestamptz
+  deletedAt             DateTime?     @db.Timestamptz  // Nunca borrar e-CF
+
+  tenant                Tenant        @relation(fields: [tenantId], references: [id])
+  items                 ItemEcf[]
+
+  @@index([tenantId])
+  @@index([estadoDgii])
+  @@index([fechaEmision])
+  @@index([rncComprador])
+  @@map("comprobantes_fiscales_electronicos")
+}
+
+model ItemEcf {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ecfId           String   @db.Uuid
+  descripcion     String   @db.VarChar(500)
+  cantidad        Decimal  @db.Decimal(10, 4)
+  precioUnitario  Decimal  @db.Decimal(15, 2)
+  descuento       Decimal  @default(0) @db.Decimal(15, 2)
+  subtotal        Decimal  @db.Decimal(15, 2)
+  tipoItbis       Int      @db.SmallInt  // 1=18%, 2=16%, 3=Exento
+  montoItbis      Decimal  @default(0) @db.Decimal(15, 2)
+  total           Decimal  @db.Decimal(15, 2)
+  orden           Int      @db.SmallInt
+
+  ecf             ComprobanteFiscalElectronico @relation(fields: [ecfId], references: [id])
+
+  @@index([ecfId])
+  @@map("items_ecf")
+}
+
+enum EstadoEcfDgii {
+  PENDIENTE     // No enviado aún
+  ENVIADO       // Enviado, esperando respuesta
+  RECIBIDO      // DGII acusó recibo
+  EN_PROCESO    // DGII procesando
+  COMPLETADO    // Válido y acreditado
+  RECHAZADO     // DGII rechazó
+  ANULADO       // Anulado por Nota de Crédito
+}
+
+// ─── REGISTROS FORMATO 606 ─────────────────────────────────────────────────
+
+model Registro606 {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String           @db.Uuid
+  periodo               String           @db.Char(6)  // AAAAMM
+
+  // Las 23 columnas oficiales de la DGII
+  col01RncCedula        String           @db.VarChar(13)
+  col02TipoId           Int              @db.SmallInt   // 1=RNC, 2=Cédula, 3=Pasaporte
+  col03TipoBienes       Int              @db.SmallInt   // 1-11
+  col04Ncf              String           @db.VarChar(19)
+  col05NcfModificado    String?          @db.VarChar(19)  // Requerido si es nota
+  col06FechaComprobante DateTime         @db.Date
+  col07FechaPago        DateTime?        @db.Date        // Requerido si retenciones > 0
+  col08MontoServicios   Decimal          @default(0) @db.Decimal(15, 2)
+  col09MontoBienes      Decimal          @default(0) @db.Decimal(15, 2)
+  // col10 es GENERATED: col08 + col09 - En prisma no se pueden generar así directamente en el schema (a menos que usemos dbgenerated, pero dejaremos computed/insert fields o triggers)
+  // Usaremos Decimal normal y lo manejamos en TS
+  col11ItbisFacturado   Decimal          @default(0) @db.Decimal(15, 2)
+  col12ItbisRetenido    Decimal          @default(0) @db.Decimal(15, 2)
+  col13ItbisProp        Decimal          @default(0) @db.Decimal(15, 2)
+  col14ItbisCosto       Decimal          @default(0) @db.Decimal(15, 2)
+  // col15 es GENERATED: col11 - col14
+  col16ItbisPercibido   Decimal          @default(0) @db.Decimal(15, 2)  // SIEMPRE 0
+  col17TipoRetencionIsr Int              @default(0) @db.SmallInt
+  col18MontoRetencionIsr Decimal         @default(0) @db.Decimal(15, 2)
+  col19IsrPercibido     Decimal          @default(0) @db.Decimal(15, 2)  // SIEMPRE 0
+  col20Isc              Decimal          @default(0) @db.Decimal(15, 2)
+  col21OtrosImpuestos   Decimal          @default(0) @db.Decimal(15, 2)
+  col22Propina          Decimal          @default(0) @db.Decimal(15, 2)
+  col23FormaPago        Int              @db.SmallInt   // 1-7
+
+  // Campos calculados (computed en aplicación, guardados para auditoría)
+  col10TotalFacturado   Decimal          @db.Decimal(15, 2)  // col08 + col09
+  col15ItbisAdelantar   Decimal          @db.Decimal(15, 2)  // col11 - col14
+
+  // Metadata de procesamiento
+  estadoValidacion      EstadoValidacion @default(PENDIENTE)
+  erroresJson           Json?            // Array de errores detectados
+  origen                OrigenRegistro
+  confianzaIa           Decimal?         @db.Decimal(4, 3)  // 0.000 - 1.000
+  archivoOriginalS3     String?          @db.Text
+  procesadoPorJobId     String?          @db.Uuid
+  revisadoPorUsuario    Boolean          @default(false)
+  revisadoEn            DateTime?        @db.Timestamptz
+
+  creadoEn              DateTime         @default(now()) @db.Timestamptz
+  actualizadoEn         DateTime         @updatedAt @db.Timestamptz
+  deletedAt             DateTime?        @db.Timestamptz
+
+  tenant                Tenant           @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, periodo])
+  @@index([estadoValidacion])
+  @@index([col01RncCedula])
+  @@map("registros_606")
+}
+
+enum EstadoValidacion {
+  PENDIENTE
+  VALIDADO
+  CON_ERROR
+  EXCLUIDO    // Usuario decidió excluir del reporte
+  INCLUIDO    // Confirmado manualmente por usuario
+}
+
+enum OrigenRegistro {
+  OCR_IMAGEN
+  OCR_PDF
+  ECF_ELECTRONICO   // Recibido como e-CF de proveedor electrónico
+  MANUAL            // Ingresado a mano por usuario
+}
+
+// ─── PROCESAMIENTO DE DOCUMENTOS (Jobs async) ─────────────────────────────
+
+model DocumentoProcessing {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String          @db.Uuid
+  jobId           String          @unique @db.Uuid  // BullMQ job ID
+  archivoS3Key    String          @db.Text
+  tipoArchivo     String          @db.VarChar(10)  // pdf, jpg, png, xml
+  status          JobStatus       @default(QUEUED)
+  errorMessage    String?         @db.Text
+  ocrConfidence   Decimal?        @db.Decimal(4, 3)
+  nlpResultJson   Json?           // Raw result de Claude API
+  registro606Id   String?         @db.Uuid  // ID del registro creado
+  creadoEn        DateTime        @default(now()) @db.Timestamptz
+  completadoEn    DateTime?       @db.Timestamptz
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("documentos_processing")
+}
+
+enum JobStatus {
+  QUEUED
+  OCR_PROCESSING
+  OCR_DONE
+  NLP_PROCESSING
+  NLP_DONE
+  VALIDATING
+  COMPLETED
+  FAILED
+}
+
+// ─── CACHÉ DE VALIDACIÓN DGII ──────────────────────────────────────────────
+
+model DgiiRncCache {
+  rnc           String    @id @db.VarChar(13)
+  razonSocial   String    @db.VarChar(255)
+  estado        String    @db.VarChar(20)  // ACTIVO, INACTIVO, etc.
+  tipo          String    @db.VarChar(20)  // PERSONA_FISICA, JURIDICA
+  actualizadoEn DateTime  @updatedAt @db.Timestamptz
+  ttlVenceEn    DateTime  @db.Timestamptz  // Cuando expirar el caché
+
+  @@map("dgii_rnc_cache")
+}
+
+// ─── AUDIT LOG (inmutable) ─────────────────────────────────────────────────
+
+model AuditLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @db.Uuid
+  usuarioId   String?   @db.Uuid
+  accion      String    @db.VarChar(100)  // "ecf.emitido", "606.generado", etc.
+  entidad     String    @db.VarChar(50)   // "ComprobanteFiscal", "Registro606"
+  entidadId   String    @db.Uuid
+  datosAntes  Json?
+  datosDespues Json?
+  ipAddress   String?   @db.VarChar(45)
+  userAgent   String?   @db.Text
+  creadoEn    DateTime  @default(now()) @db.Timestamptz
+
+  @@index([tenantId, creadoEn])
+  @@index([entidad, entidadId])
+  @@map("audit_log")
+}

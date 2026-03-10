@@ -1,0 +1,19 @@
+{
+    "name": "@consultablia/xml-generator",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "lint": "eslint \"src/**/*.ts\"",
+        "clean": "rm -rf dist"
+    },
+    "dependencies": {
+        "xmlbuilder2": "^3.1.1",
+        "xmldsigjs": "^2.4.9"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.2",
+        "@types/node": "^20.11.25"
+    }
+}
