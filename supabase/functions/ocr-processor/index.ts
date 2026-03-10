@@ -60,14 +60,33 @@ serve(async (req) => {
                 messages: [
                     {
                         role: "system",
-                        content: "Eres un experto en extracción de datos de facturas dominicanas (e-CF). Responde únicamente con un objeto JSON válido."
+                        content: `Eres un experto contable de República Dominicana especializado en extraer datos de facturas (e-CF y comprobantes fiscales).
+Tu único objetivo es analizar la imagen de la factura y extraer exactamente los siguientes campos, devolviendo UNICAMENTE un objeto JSON válido.
+
+Reglas de extracción:
+1. rnc_emisor: Buscar el RNC de la empresa que emite la factura (suele estar arriba). Formato: 9 a 11 dígitos, sin guiones.
+2. rnc_comprador: Buscar "RNC/Cédula CLiente", "RNC Comprador" o similar. Si es "Factura para Consumidor Final", ES PROBABLE QUE SEA null.
+3. ncf: Buscar "NCF", "e-NCF", "Comprobante Fiscal". Suele empezar con B, E followed by 11 digits (e.g., E320003240744).
+4. total: Buscar "TOTAL", "Total Facturado", "Monto Total". Es el valor final a pagar. Debe ser un NUMERO DECIMAL (float). Si hay comas para miles, quítalas. Usa punto para decimales.
+5. itbis: Buscar "ITBIS" (18% o 16%). Debe ser un NUMERO DECIMAL. Si no hay, o dice exento, pon 0.00.
+6. razon_social_comprador: Nombre del cliente. Si es consumidor final o está en blanco, pon null.
+
+FORMATO ESTRICTO REQUERIDO:
+{
+  "rnc_emisor": "...",
+  "rnc_comprador": "...",
+  "ncf": "...",
+  "total": 0.00,
+  "itbis": 0.00,
+  "razon_social_comprador": "..."
+}`
                     },
                     {
                         role: "user",
                         content: [
                             {
                                 type: "text",
-                                text: "Analiza esta factura y extrae: rnc_emisor, rnc_comprador, ncf (o e-NCF), total (monto total), itbis (monto del itbis) y razon_social_comprador. Si no encuentras alguno, pon null. Formato: { \"rnc_emisor\": \"...\", \"rnc_comprador\": \"...\", \"ncf\": \"...\", \"total\": 0.0, \"itbis\": 0.0, \"razon_social_comprador\": \"...\" }"
+                                text: "Analiza minuciosamente esta factura deteniéndote en los valores numéricos al final de la tirilla para encontrar el TOTAL exacto a pagar y el ITBIS cobrado."
                             },
                             {
                                 type: "image_url",

@@ -10,6 +10,7 @@ export default function EscanearPage() {
   const [preview, setPreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [extracted, setExtracted] = useState<{
     rnc_comprador?: string;
@@ -172,7 +173,19 @@ export default function EscanearPage() {
                 </p>
               </>
             ) : (
-              <img src={preview} alt="Factura a escanear" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', objectFit: 'contain' }} />
+              <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <img src={preview} alt="Factura a escanear" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', objectFit: 'contain' }} />
+                <div
+                  onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }}
+                  style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s', borderRadius: '8px' }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+                >
+                  <span style={{ background: 'var(--color-surface)', padding: '0.6rem 1.2rem', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--color-text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                    Ampliar Imagen
+                  </span>
+                </div>
+              </div>
             )}
           </div>
 
@@ -291,6 +304,29 @@ export default function EscanearPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Imagen Ampliada */}
+      {isModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }} onClick={() => setIsModalOpen(false)}>
+          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', padding: '1rem', position: 'absolute', top: 0, right: 0, zIndex: 10 }}>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', backdropFilter: 'blur(10px)' }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div style={{ overflowY: 'auto', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', padding: '2rem 0' }}>
+              <img src={preview} alt="Factura ampliada" style={{ display: 'block', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
