@@ -60,33 +60,79 @@ serve(async (req) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Eres un experto contable de República Dominicana especializado en extraer datos de facturas (e-CF y comprobantes fiscales).
-Tu único objetivo es analizar la imagen de la factura y extraer exactamente los siguientes campos, devolviendo UNICAMENTE un objeto JSON válido.
+                        content: `Eres un experto contable de República Dominicana especializado en extraer datos de facturas para el reporte 606 (Compras) de la DGII.
+Tu objetivo es analizar la imagen de la factura y extraer TODOS los campos del formato 606, devolviendo ÚNICAMENTE un objeto JSON válido.
 
-Reglas de extracción:
-1. rnc_emisor: Buscar el RNC de la empresa que emite la factura (suele estar arriba). Formato: 9 a 11 dígitos, sin guiones.
-2. rnc_comprador: Buscar "RNC/Cédula CLiente", "RNC Comprador" o similar. Si es "Factura para Consumidor Final", ES PROBABLE QUE SEA null.
-3. ncf: Buscar "NCF", "e-NCF", "Comprobante Fiscal". Suele empezar con B, E followed by 11 digits (e.g., E320003240744).
-4. total: Buscar "TOTAL", "Total Facturado", "Monto Total". Es el valor final a pagar. Debe ser un NUMERO DECIMAL (float). Si hay comas para miles, quítalas. Usa punto para decimales.
-5. itbis: Buscar "ITBIS" (18% o 16%). Debe ser un NUMERO DECIMAL. Si no hay, o dice exento, pon 0.00.
-6. razon_social_comprador: Nombre del cliente. Si es consumidor final o está en blanco, pon null.
+CAMPOS A EXTRAER:
 
-FORMATO ESTRICTO REQUERIDO:
+1. DATOS DEL EMISOR:
+   - rnc_emisor: RNC de la empresa emisora (9-11 dígitos, sin guiones). Usualmente arriba de la factura.
+   - razon_social_emisor: Nombre completo de la empresa emisora.
+
+2. DATOS DEL COMPRADOR:
+   - rnc_comprador: RNC/Cédula del comprador. Si dice "Consumidor Final" o está vacío, pon null.
+   - razon_social_comprador: Nombre del comprador. Si es consumidor final, pon null.
+
+3. DATOS DEL COMPROBANTE:
+   - ncf: Número de Comprobante Fiscal. Suele empezar con B o E seguido de 11 dígitos (ej: E320003240744).
+   - fecha_comprobante: Fecha de emisión en formato YYYY-MM-DD.
+   - fecha_pago: Si está disponible, fecha de pago en formato YYYY-MM-DD. Si no, usar la misma fecha del comprobante.
+
+4. CLASIFICACIÓN:
+   - tipo_gasto: Clasificar como "servicios", "bienes" o "mixto" según lo que se vendió.
+
+5. MONTOS (TODOS EN FORMATO DECIMAL, SIN COMAS):
+   - monto_facturado: Subtotal antes de impuestos (monto gravado).
+   - itbis_facturado: ITBIS cobrado (18% o 16% del monto gravado).
+   - itbis_retenido: ITBIS retenido (si aplica). Usualmente 0.00.
+   - isr_retenido: ISR retenido (si aplica). Usualmente 0.00.
+   - propina_legal: Propina legal 10% (si aplica, principalmente restaurantes). Usualmente 0.00.
+   - total: TOTAL FINAL a pagar (suma de todo).
+
+6. NIVELES DE CONFIANZA (0-100):
+   Para cada campo crítico, evalúa qué tan seguro estás de la extracción:
+   - 85-100: Muy claro, perfectamente legible
+   - 60-84: Legible pero con alguna ambigüedad
+   - 0-59: Difícil de leer o muy borroso
+
+FORMATO JSON ESTRICTO:
 {
   "rnc_emisor": "...",
-  "rnc_comprador": "...",
+  "razon_social_emisor": "...",
+  "rnc_comprador": "..." | null,
+  "razon_social_comprador": "..." | null,
   "ncf": "...",
+  "fecha_comprobante": "YYYY-MM-DD",
+  "fecha_pago": "YYYY-MM-DD",
+  "tipo_gasto": "servicios" | "bienes" | "mixto",
+  "monto_facturado": 0.00,
+  "itbis_facturado": 0.00,
+  "itbis_retenido": 0.00,
+  "isr_retenido": 0.00,
+  "propina_legal": 0.00,
   "total": 0.00,
-  "itbis": 0.00,
-  "razon_social_comprador": "..."
-}`
+  "confidence": {
+    "rnc_emisor": 0-100,
+    "rnc_comprador": 0-100,
+    "ncf": 0-100,
+    "total": 0-100,
+    "itbis_facturado": 0-100,
+    "fecha_comprobante": 0-100
+  }
+}
+
+IMPORTANTE:
+- Todos los números deben ser DECIMALES (float), sin comas.
+- Las fechas en formato YYYY-MM-DD.
+- Si un campo no se encuentra, usa null para strings o 0.00 para números.
+- Los niveles de confianza deben reflejar la claridad de lectura del campo en la imagen.`
                     },
                     {
                         role: "user",
                         content: [
                             {
                                 type: "text",
-                                text: "Analiza minuciosamente esta factura deteniéndote en los valores numéricos al final de la tirilla para encontrar el TOTAL exacto a pagar y el ITBIS cobrado."
+                                text: "Analiza minuciosamente esta factura dominicana y extrae TODOS los campos del formato 606. Presta especial atención a: 1) RNC del emisor y comprador, 2) NCF completo, 3) Fechas, 4) Desglose de montos (subtotal, ITBIS, total), 5) Tipo de producto/servicio. Evalúa la claridad de cada campo para los niveles de confianza."
                             },
                             {
                                 type: "image_url",
