@@ -45,8 +45,14 @@ export default function EscanearPage() {
       const file = files[i];
       setUploadProgress({ current: i + 1, total: files.length });
 
-      if (!file.type.startsWith('image/') && !file.type.includes('pdf')) {
-        console.warn(`Archivo omitido (no es imagen/PDF): ${file.name}`);
+      // Temporalmente solo aceptar imágenes (PDFs requieren procesamiento especial)
+      if (!file.type.startsWith('image/')) {
+        if (file.type.includes('pdf')) {
+          console.warn(`PDF omitido (soporte en desarrollo): ${file.name}`);
+          setError(`PDF "${file.name}" omitido. Por ahora, solo se aceptan imágenes (JPG, PNG).`);
+        } else {
+          console.warn(`Archivo omitido (no es imagen): ${file.name}`);
+        }
         continue;
       }
 
@@ -67,7 +73,48 @@ export default function EscanearPage() {
   };
 
   const processImage = async (imageFile: File) => {
+    // MODO DEMO: Si falla OCR o no está configurado, usar datos de ejemplo
+    const DEMO_MODE = false; // ✅ OCR configurado - usando OpenAI Vision
+
     try {
+      if (DEMO_MODE) {
+        // Simular delay de procesamiento
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // Crear URL local de la imagen para preview
+        const localUrl = URL.createObjectURL(imageFile);
+
+        // Datos de ejemplo para demostración
+        const mockOcrData = {
+          rnc_emisor: `${Math.floor(100000000 + Math.random() * 900000000)}`,
+          razon_social_emisor: imageFile.name.includes('carrefour') ? 'CARREFOUR DOMINICANA SA' :
+                              imageFile.name.includes('price') ? 'PRICESMART DOMINICANA SA' :
+                              'COMERCIAL EJEMPLO SRL',
+          ncf: `E${String(Math.floor(Math.random() * 10000000000)).padStart(11, '0')}`,
+          fecha_comprobante: new Date().toISOString().split('T')[0],
+          tipo_gasto: 'bienes',
+          monto_facturado: parseFloat((Math.random() * 5000 + 500).toFixed(2)),
+          itbis_facturado: 0,
+          total: 0,
+          confidence: {
+            rnc_emisor: 95,
+            ncf: 92,
+            total: 98,
+          }
+        };
+
+        // Calcular ITBIS y total
+        mockOcrData.itbis_facturado = parseFloat((mockOcrData.monto_facturado * 0.18).toFixed(2));
+        mockOcrData.total = parseFloat((mockOcrData.monto_facturado + mockOcrData.itbis_facturado).toFixed(2));
+
+        console.log('📍 MODO DEMO: Usando datos de ejemplo', mockOcrData);
+
+        // Agregar al contexto global con URL local
+        agregarDesdeOCR(mockOcrData, localUrl, `demo/${imageFile.name}`);
+        return;
+      }
+
+      // MODO PRODUCCIÓN: OCR real con Supabase + OpenAI
       // 1. Subir la imagen a Supabase Storage
       const fileExt = imageFile.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}.${fileExt}`;
@@ -231,11 +278,12 @@ export default function EscanearPage() {
             </button>
             <input
               type="file"
-              accept="image/*,application/pdf"
+              accept="image/*"
               multiple
               ref={fileInputRef}
               onChange={handleFileChange}
               style={{ display: 'none' }}
+              title="Solo imágenes JPG, PNG (soporte PDF próximamente)"
             />
           </div>
         </div>
