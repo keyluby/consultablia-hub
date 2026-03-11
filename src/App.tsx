@@ -9,6 +9,7 @@ import Panel from "./pages/Panel";
 import EmitirPage from "./pages/EmitirPage";
 import EscanearPage from "./pages/EscanearPage";
 import NotFound from "./pages/NotFound";
+import { Facturas606Provider } from "./contexts/Facturas606Context";
 
 const queryClient = new QueryClient();
 
@@ -33,9 +34,11 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <AppLayout />
-      </BrowserRouter>
+      <Facturas606Provider>
+        <BrowserRouter>
+          <AppLayout />
+        </BrowserRouter>
+      </Facturas606Provider>
     </TooltipProvider>
   </QueryClientProvider>
 );
