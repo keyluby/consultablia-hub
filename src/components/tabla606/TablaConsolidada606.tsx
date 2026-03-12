@@ -16,7 +16,7 @@ export default function TablaConsolidada606({ onVerDetalleFactura }: TablaConsol
     }
   };
 
-  const handleEliminar = (e: React.MouseEvent, factura: Registro606) => {
+  const handleEliminar = async (e: React.MouseEvent, factura: Registro606) => {
     e.stopPropagation(); // Evitar que se abra el detalle
 
     const confirmar = window.confirm(
@@ -27,7 +27,7 @@ export default function TablaConsolidada606({ onVerDetalleFactura }: TablaConsol
     );
 
     if (confirmar && factura.id) {
-      eliminarFactura(factura.id);
+      await eliminarFactura(factura.id);
     }
   };
 

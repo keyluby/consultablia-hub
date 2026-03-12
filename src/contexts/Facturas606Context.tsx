@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import {
   Registro606,
   PeriodoContable,
@@ -7,18 +7,31 @@ import {
   validarRegistro606,
   OCRExtractionResult,
 } from '@/types/formato606';
+import {
+  obtenerOCrearReporte,
+  obtenerReportePorId,
+  listarFacturasDeReporte,
+  guardarFactura,
+  actualizarFactura as actualizarFacturaDB,
+  eliminarFactura as eliminarFacturaDB,
+  dbToRegistro606,
+} from '@/services/reportes606Service';
+import type { Reporte606DB } from '@/types/database';
+import { toast } from 'sonner';
 
 interface Facturas606ContextType {
   // Estado
   facturas: Registro606[];
   periodoActual: PeriodoContable;
+  reporteActual: Reporte606DB | null;
   facturaSeleccionada: Registro606 | null;
   indiceFacturaSeleccionada: number;
+  isLoading: boolean;
 
   // Acciones de facturas
-  agregarFactura: (factura: Partial<Registro606>) => void;
-  actualizarFactura: (id: string, cambios: Partial<Registro606>) => void;
-  eliminarFactura: (id: string) => void;
+  agregarFactura: (factura: Partial<Registro606>) => Promise<void>;
+  actualizarFactura: (id: string, cambios: Partial<Registro606>) => Promise<void>;
+  eliminarFactura: (id: string) => Promise<void>;
   limpiarTodasFacturas: () => void;
 
   // Navegación
@@ -26,14 +39,15 @@ interface Facturas606ContextType {
   siguienteFactura: () => void;
   facturaAnterior: () => void;
 
-  // Período
+  // Período y Reportes
   cambiarPeriodo: (año: number, mes: number) => void;
+  cargarReportePorId: (reporteId: string) => Promise<void>;
 
   // Cálculos
   obtenerResumen: () => Resumen606;
 
   // Import/Export
-  agregarDesdeOCR: (ocrResult: OCRExtractionResult, archivoUrl?: string, storagePath?: string) => void;
+  agregarDesdeOCR: (ocrResult: OCRExtractionResult, archivoUrl?: string, storagePath?: string) => Promise<void>;
   exportarA606: () => Registro606[];
 }
 
@@ -49,12 +63,79 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
 
   const [facturas, setFacturas] = useState<Registro606[]>([]);
   const [indiceFacturaSeleccionada, setIndiceFacturaSeleccionada] = useState<number>(-1);
+  const [reporteActual, setReporteActual] = useState<Reporte606DB | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const facturaSeleccionada = indiceFacturaSeleccionada >= 0 ? facturas[indiceFacturaSeleccionada] : null;
 
+  // ========== CARGAR FACTURAS AL CAMBIAR PERÍODO ==========
+
+  useEffect(() => {
+    cargarFacturasDelPeriodo();
+  }, [periodoActual.año, periodoActual.mes]);
+
+  const cargarFacturasDelPeriodo = async () => {
+    setIsLoading(true);
+    try {
+      const periodo = `${periodoActual.año}-${String(periodoActual.mes).padStart(2, '0')}`;
+      const reporte = await obtenerOCrearReporte(periodo);
+      setReporteActual(reporte);
+
+      const facturasDB = await listarFacturasDeReporte(reporte.id);
+      const facturasConvertidas = facturasDB.map(dbToRegistro606);
+      setFacturas(facturasConvertidas);
+      setIndiceFacturaSeleccionada(facturasConvertidas.length > 0 ? 0 : -1);
+    } catch (error) {
+      console.error('Error cargando facturas del período:', error);
+      toast.error('Error al cargar las facturas del período');
+      setFacturas([]);
+      setReporteActual(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Cargar un reporte específico por ID
+   * Se usa cuando se navega directamente a un reporte desde la lista
+   */
+  const cargarReportePorId = useCallback(async (reporteId: string) => {
+    setIsLoading(true);
+    try {
+      const reporte = await obtenerReportePorId(reporteId);
+      setReporteActual(reporte);
+
+      // Actualizar periodoActual para que coincida con el reporte
+      const [año, mes] = reporte.periodo.split('-');
+      const fecha = new Date(parseInt(año), parseInt(mes) - 1);
+      setPeriodoActual({
+        año: parseInt(año),
+        mes: parseInt(mes),
+        label: `${fecha.toLocaleDateString('es-DO', { month: 'long' })} ${año}`,
+      });
+
+      const facturasDB = await listarFacturasDeReporte(reporte.id);
+      const facturasConvertidas = facturasDB.map(dbToRegistro606);
+      setFacturas(facturasConvertidas);
+      setIndiceFacturaSeleccionada(facturasConvertidas.length > 0 ? 0 : -1);
+    } catch (error) {
+      console.error('Error cargando reporte:', error);
+      toast.error('Error al cargar el reporte');
+      setFacturas([]);
+      setReporteActual(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // ========== CRUD DE FACTURAS ==========
 
-  const agregarFactura = useCallback((factura: Partial<Registro606>) => {
+  const agregarFactura = useCallback(async (factura: Partial<Registro606>) => {
+    if (!reporteActual) {
+      toast.error('No hay un reporte activo');
+      return;
+    }
+
     const nuevaFactura: Registro606 = {
       id: `FAC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       fecha_creacion: new Date().toISOString(),
@@ -68,46 +149,65 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
     nuevaFactura.estado_validacion = valido ? 'valido' : 'requiere_revision';
     nuevaFactura.errores_validacion = errores;
 
-    setFacturas((prev) => [...prev, nuevaFactura]);
+    try {
+      // Guardar en BD
+      const facturaGuardada = await guardarFactura(reporteActual.id, nuevaFactura);
+      const facturaConvertida = dbToRegistro606(facturaGuardada);
 
-    // Auto-seleccionar la nueva factura
-    setIndiceFacturaSeleccionada((prev) => {
-      if (prev === -1) return 0; // Si no había ninguna seleccionada, seleccionar la primera
-      return prev; // Mantener la selección actual
-    });
+      // Actualizar estado local
+      setFacturas((prev) => [...prev, facturaConvertida]);
+
+      // Auto-seleccionar la nueva factura
+      setIndiceFacturaSeleccionada((prev) => {
+        if (prev === -1) return 0;
+        return prev;
+      });
+
+      toast.success('Factura agregada correctamente');
+    } catch (error) {
+      console.error('Error guardando factura:', error);
+      toast.error('Error al guardar la factura');
+    }
+  }, [reporteActual]);
+
+  const actualizarFactura = useCallback(async (id: string, cambios: Partial<Registro606>) => {
+    try {
+      // Actualizar en BD
+      const facturaActualizada = await actualizarFacturaDB(id, cambios);
+      const facturaConvertida = dbToRegistro606(facturaActualizada);
+
+      // Actualizar estado local
+      setFacturas((prev) =>
+        prev.map((factura) => (factura.id === id ? facturaConvertida : factura))
+      );
+
+      toast.success('Factura actualizada');
+    } catch (error) {
+      console.error('Error actualizando factura:', error);
+      toast.error('Error al actualizar la factura');
+    }
   }, []);
 
-  const actualizarFactura = useCallback((id: string, cambios: Partial<Registro606>) => {
-    setFacturas((prev) =>
-      prev.map((factura) => {
-        if (factura.id === id) {
-          const actualizada = {
-            ...factura,
-            ...cambios,
-            fecha_modificacion: new Date().toISOString(),
-          };
+  const eliminarFactura = useCallback(async (id: string) => {
+    try {
+      // Eliminar de BD (también elimina imagen del storage)
+      await eliminarFacturaDB(id);
 
-          // Re-validar
-          const { valido, errores } = validarRegistro606(actualizada);
-          actualizada.estado_validacion = valido ? 'valido' : 'requiere_revision';
-          actualizada.errores_validacion = errores;
-
-          return actualizada;
+      // Actualizar estado local
+      setFacturas((prev) => {
+        const nuevasFacturas = prev.filter((f) => f.id !== id);
+        // Ajustar índice seleccionado si es necesario
+        if (indiceFacturaSeleccionada >= nuevasFacturas.length) {
+          setIndiceFacturaSeleccionada(Math.max(0, nuevasFacturas.length - 1));
         }
-        return factura;
-      })
-    );
-  }, []);
+        return nuevasFacturas;
+      });
 
-  const eliminarFactura = useCallback((id: string) => {
-    setFacturas((prev) => {
-      const nuevasFacturas = prev.filter((f) => f.id !== id);
-      // Ajustar índice seleccionado si es necesario
-      if (indiceFacturaSeleccionada >= nuevasFacturas.length) {
-        setIndiceFacturaSeleccionada(Math.max(0, nuevasFacturas.length - 1));
-      }
-      return nuevasFacturas;
-    });
+      toast.success('Factura eliminada');
+    } catch (error) {
+      console.error('Error eliminando factura:', error);
+      toast.error('Error al eliminar la factura');
+    }
   }, [indiceFacturaSeleccionada]);
 
   const limpiarTodasFacturas = useCallback(() => {
@@ -144,6 +244,7 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
       mes,
       label: `${fecha.toLocaleDateString('es-DO', { month: 'long' })} ${año}`,
     });
+    // El useEffect detectará el cambio y cargará las facturas automáticamente
   }, []);
 
   // ========== CÁLCULOS ==========
@@ -181,13 +282,13 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
   // ========== IMPORT/EXPORT ==========
 
   const agregarDesdeOCR = useCallback(
-    (ocrResult: OCRExtractionResult, archivoUrl?: string, storagePath?: string) => {
+    async (ocrResult: OCRExtractionResult, archivoUrl?: string, storagePath?: string) => {
       const registro = ocrToRegistro606(ocrResult, {
         archivo_url: archivoUrl,
         storage_path: storagePath,
       });
 
-      agregarFactura(registro);
+      await agregarFactura(registro);
     },
     [agregarFactura]
   );
@@ -201,8 +302,10 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
     // Estado
     facturas,
     periodoActual,
+    reporteActual,
     facturaSeleccionada,
     indiceFacturaSeleccionada,
+    isLoading,
 
     // Acciones
     agregarFactura,
@@ -215,8 +318,9 @@ export function Facturas606Provider({ children }: { children: ReactNode }) {
     siguienteFactura,
     facturaAnterior,
 
-    // Período
+    // Período y Reportes
     cambiarPeriodo,
+    cargarReportePorId,
 
     // Cálculos
     obtenerResumen,

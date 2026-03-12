@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useFacturas606 } from '@/contexts/Facturas606Context';
@@ -8,17 +8,27 @@ import { Registro606 } from '@/types/formato606';
 
 export default function EscanearPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { reporteId } = useParams<{ reporteId: string }>();
 
   // Context para gestión de facturas
   const {
     facturaSeleccionada,
     indiceFacturaSeleccionada,
+    reporteActual,
     agregarDesdeOCR,
     actualizarFactura,
     eliminarFactura,
     siguienteFactura,
     facturaAnterior,
+    cargarReportePorId,
   } = useFacturas606();
+
+  // Cargar reporte al montar el componente si hay reporteId
+  useEffect(() => {
+    if (reporteId) {
+      cargarReportePorId(reporteId);
+    }
+  }, [reporteId, cargarReportePorId]);
 
   // Estado de vista: 'tabla' (primaria 80%) o 'detalle' (secundaria 20%)
   const [vista, setVista] = useState<'tabla' | 'detalle'>('tabla');
@@ -93,7 +103,7 @@ export default function EscanearPage() {
                               'COMERCIAL EJEMPLO SRL',
           ncf: `E${String(Math.floor(Math.random() * 10000000000)).padStart(11, '0')}`,
           fecha_comprobante: new Date().toISOString().split('T')[0],
-          tipo_gasto: 'bienes',
+          tipo_gasto: 'bienes' as const,
           monto_facturado: parseFloat((Math.random() * 5000 + 500).toFixed(2)),
           itbis_facturado: 0,
           total: 0,
@@ -111,7 +121,7 @@ export default function EscanearPage() {
         console.log('📍 MODO DEMO: Usando datos de ejemplo', mockOcrData);
 
         // Agregar al contexto global con URL local
-        agregarDesdeOCR(mockOcrData, localUrl, `demo/${imageFile.name}`);
+        await agregarDesdeOCR(mockOcrData, localUrl, `demo/${imageFile.name}`);
         return;
       }
 
@@ -148,7 +158,7 @@ export default function EscanearPage() {
       console.log('Datos extraídos por IA:', ocrData);
 
       // 4. Agregar al contexto global
-      agregarDesdeOCR(ocrData, publicUrl, uploadData.path);
+      await agregarDesdeOCR(ocrData, publicUrl, uploadData.path);
 
     } catch (err: any) {
       console.error('Error procesando imagen:', err);
@@ -205,7 +215,7 @@ export default function EscanearPage() {
     }
   };
 
-  const handleEliminarDesdeDetalle = () => {
+  const handleEliminarDesdeDetalle = async () => {
     if (!facturaSeleccionada) return;
 
     const confirmar = window.confirm(
@@ -216,7 +226,7 @@ export default function EscanearPage() {
     );
 
     if (confirmar && facturaSeleccionada.id) {
-      eliminarFactura(facturaSeleccionada.id);
+      await eliminarFactura(facturaSeleccionada.id);
       setVista('tabla'); // Volver a la tabla después de eliminar
     }
   };
@@ -229,31 +239,51 @@ export default function EscanearPage() {
         borderBottom: '1px solid var(--color-border)',
         background: 'var(--color-surface)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-          <Link to="/" style={{
+        {/* Breadcrumbs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <Link to="/reportes" style={{
             fontSize: '0.8rem', color: 'var(--color-text-muted)', textDecoration: 'none',
             display: 'flex', alignItems: 'center', gap: '0.25rem',
-          }}>
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
+          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-muted)'}
+          >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="15 18 9 12 15 6" />
             </svg>
-            Panel
+            Reportes
           </Link>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-border)" strokeWidth="2">
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-            {vista === 'tabla' ? 'Reporte 606' : 'Detalle de Factura'}
+          <span style={{ fontSize: '0.8rem', color: 'var(--color-text)', fontWeight: '500' }}>
+            {reporteActual?.nombre || 'Reporte 606'}
           </span>
+          {vista === 'detalle' && (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-border)" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                Detalle de Factura
+              </span>
+            </>
+          )}
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
-              {vista === 'tabla' ? 'Reporte 606 - Compras' : 'Revisar Factura'}
+              {vista === 'tabla'
+                ? (reporteActual?.nombre || 'Reporte 606 - Compras')
+                : 'Revisar Factura'}
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
               {vista === 'tabla'
-                ? 'Tabla consolidada de facturas del período'
+                ? reporteActual?.fecha_inicio && reporteActual?.fecha_fin
+                  ? `${new Date(reporteActual.fecha_inicio).toLocaleDateString('es-DO')} - ${new Date(reporteActual.fecha_fin).toLocaleDateString('es-DO')}`
+                  : 'Tabla consolidada de facturas del período'
                 : 'Verificación y edición de datos extraídos'}
             </p>
           </div>

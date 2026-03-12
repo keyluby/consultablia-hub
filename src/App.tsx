@@ -8,6 +8,7 @@ import Sidebar from "./components/Sidebar";
 import Panel from "./pages/Panel";
 import EmitirPage from "./pages/EmitirPage";
 import EscanearPage from "./pages/EscanearPage";
+import ReportesPage from "./pages/ReportesPage";
 import NotFound from "./pages/NotFound";
 import { Facturas606Provider } from "./contexts/Facturas606Context";
 
@@ -17,10 +18,13 @@ function AppLayout() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
       <Sidebar />
-      <main style={{ flex: 1, padding: '2rem 3rem', background: 'var(--color-bg)' }}>
+      <main style={{ flex: 1, background: 'var(--color-bg)' }}>
         <Routes>
           <Route path="/" element={<Panel />} />
           <Route path="/emitir" element={<EmitirPage />} />
+          <Route path="/reportes" element={<ReportesPage />} />
+          <Route path="/reportes/:reporteId/escanear" element={<EscanearPage />} />
+          {/* Ruta legacy para compatibilidad */}
           <Route path="/escanear" element={<EscanearPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
